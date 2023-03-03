@@ -1,0 +1,129 @@
+---
+title: "Milestone Report"
+author: "FJ Haran"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, messaging = FALSE, warning=FALSE, echo=FALSE}
+library(tm)
+library(sbo)
+library(dplyr)
+```
+
+
+```{r, warning=FALSE, echo=FALSE}
+#function to sample the text file
+
+create.text.df <- function(original, sample.percentage = 0.1, book = "default")
+{
+    set.seed(1)
+    if(!file.exists(original))
+    {
+        print("no file")
+        return(NULL)
+    } 
+    f <- file(original, "rb")
+    original.text <- readLines(f, encoding = "UTF-8", skipNul = TRUE)
+    close(f)
+    n.lines <- sort(sample(1:length(original.text),
+                           as.integer(length(original.text) * sample.percentage),
+                           replace = FALSE))
+    sampled.text <- original.text[n.lines]
+    return(data.frame(doc_id = 1:as.integer(length(original.text) * sample.percentage),
+                      book = book,
+                      text = sampled.text,
+                      stringsAsFactors = FALSE))
+}
+```
+
+## Open clean corpora files
+```{r}
+train.df <- create.text.df("clean.training.corpus.txt", 1.0)
+train.corpus <- Corpus(VectorSource(train.df$text))
+
+test.df <- create.text.df("clean.test.corpus.txt", 1.0)
+test.corpus <- Corpus(VectorSource(test.df$text))
+```
+
+Step 1. Build next-word prediction tables
+```{r, messaging = FALSE, warning=FALSE}
+p <- sbo_predictor(object = train.corpus$content, # preloaded example dataset
+                   N = 5, # Train a 3-gram model
+                   dict = target ~ 0.75, # cover 75% of training corpus
+                   .preprocess = sbo::preprocess, # Preprocessing transformation 
+                   EOS = ".?!:;", # End-Of-Sentence tokens
+                   lambda = 0.4, # Back-off penalization in SBO algorithm
+                   L = 3L, # Number of predictions for input
+                   filtered = "<UNK>" # Exclude the <UNK> token from predictions
+                   )
+```
+
+Step 2. Generate predictions
+```{r}
+predict(p, "new york")
+```
+
+Step 3. Evaluate prediction model
+```{r}
+set.seed(840)
+
+evaluation <- eval_sbo_predictor(p, test = test.corpus$content)
+
+evaluation %>%  # accuracy for in-sentence predictions
+         filter(true != "<EOS>") %>%
+         summarise(accuracy = sum(correct)/n(), 
+                   uncertainty = sqrt(accuracy * (1 - accuracy) / n()))
+```
+
+4. Word coverage
+```{r}
+c <- word_coverage(p, train.corpus$content)
+plot(c)
+```
+
+5. Histogram of the distribution of correct predictions 
+```{r}
+if (require(ggplot2)) {
+        evaluation %>%
+                filter(correct, true != "<EOS>") %>%
+                select(true) %>%
+                transmute(rank = match(true, table = attr(p, "dict"))) %>%
+                ggplot(aes(x = rank)) + geom_histogram(binwidth = 25)
+}
+```
+<!-- # N-Gram Model -->
+<!-- Step 1. Get n-gram frequencies from training corpus -->
+<!-- ```{r} -->
+<!-- dict <- sbo_dictionary(train.corpus$content, max_size = Inf, target = 1,  -->
+<!--                        .preprocess = identity, EOS = "") -->
+<!-- head(dict) -->
+<!-- ``` -->
+
+<!-- Step 2. Get k-gram frequencies from training corpus: -->
+<!-- ```{r} -->
+<!-- freqs <- kgram_freqs(train.corpus$content, N = 3, dict) -->
+<!-- ``` -->
+
+<!-- Step 3. Build next-word prediction tables -->
+<!-- ```{r} -->
+<!-- p <- sbo_predictor(freqs)  -->
+<!-- predict(p, "new york")  -->
+<!-- ``` -->
+
+<!-- Step 4. Evaluate model -->
+<!-- ```{r} -->
+<!-- set.seed(840) -->
+
+<!-- evaluation <- eval_sbo_predictor(p, test = test.corpus$content) -->
+
+<!-- evaluation %>%  # accuracy for in-sentence predictions -->
+<!--          filter(true != "<EOS>") %>% -->
+<!--          summarise(accuracy = sum(correct)/n(),  -->
+<!--                    uncertainty = sqrt(accuracy * (1 - accuracy) / n())) -->
+<!-- ``` -->
+

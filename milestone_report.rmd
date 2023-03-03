@@ -1,0 +1,454 @@
+---
+title: "Milestone Report"
+author: "FJ Haran"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Executive Summary
+This report contains a basic summary and exploratory analysis of the SwiftKey data set that I performed to better understand the distribution and relationship between the words, tokens, and phrases in the text. My end goal is to produce a word prediction algorithm and Shiny app using the data set.
+
+```{r setup,echo = FALSE}
+#Set up environment
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE}
+## Clear global values
+rm(list=ls())
+```
+
+```{r, echo = FALSE, message=FALSE}
+#Load libraries
+library(tidytext)
+library(tm)
+library(ngram)
+library(dplyr)
+library(corpus)
+library(ggplot2)
+library(wordcloud)
+library(textclean)
+library(SnowballC)
+library(quanteda)
+```
+
+### Getting & cleaning the data
+
+```{r, warning=FALSE, echo=FALSE}
+#function to sample the text file
+create.text.df <- function(original, sample.percentage = 0.15, book = "default")
+{
+    set.seed(1)
+    if(!file.exists(original))
+    {
+        print("no file")
+        return(NULL)
+    } 
+    f <- file(original, "rb")
+    original.text <- readLines(f, encoding = "UTF-8", skipNul = TRUE)
+    close(f)
+    n.lines <- sort(sample(1:length(original.text),
+                           as.integer(length(original.text) * sample.percentage),
+                           replace = FALSE))
+    sampled.text <- original.text[n.lines]
+    return(data.frame(doc_id = 1:as.integer(length(original.text) * sample.percentage),
+                      book = book,
+                      text = sampled.text,
+                      stringsAsFactors = FALSE))
+}
+```
+
+```{r, warning=FALSE, echo=FALSE}
+n = .25
+```
+
+1. Load the data & create corpora:
+```{r, warning=FALSE, message=FALSE}
+blogs.df <- create.text.df("en_US.blogs.txt", n)
+twits.df <- create.text.df("en_US.twitter.txt", n)
+news.df <- create.text.df("en_US.news.txt", n)
+```
+Note that only 1.5% of the total data set was sampled to reduce the resources required to run the code.
+
+4. Create combined data frame:
+```{r}
+combined.df <- rbind(twits.df, news.df, blogs.df)
+```
+
+6. Pre-process text using a custom function:
+
+In this step I removed contractions, URLs, special characters, control characters, 
+white spaces, alphanumeric characters, numbers, capitalization, common words, 
+punctuation, and otherwise preparing the corpus for analysis. 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+txt.cleaning <- function(x)
+{
+    gsub("i'm", "i am", x)
+    gsub("i've", "i have", x)
+    gsub("don't", "do not", x)
+    gsub("did't", "did not", x)
+    gsub("doesn't", "does not", x)
+    gsub("haven't", "have not", x)
+    gsub("isn't", "is not", x)
+    gsub("won't", "will not", x)
+    gsub("can't", "can not", x)
+    gsub("n't", " not", x)
+    gsub("'ll", " will", x)
+    gsub("'re", " are", x)
+    gsub("'ve", " have", x)
+    gsub("'m", " am", x)
+    gsub("'d", " would", x)
+    gsub("'s", "", x)
+    gsub("'t",'', x)
+    gsub('http\\S+\\s*', '', x) ## Remove URLs
+    gsub('\\b+RT', '', x) ## Remove RT
+    gsub('#\\S+', '', x) ## Remove #
+    gsub('*\\S+', '', x) ## Remove *
+    gsub('@\\S+', '', x) ## Remove @
+    gsub('[[:cntrl:]]', '', x) ## Remove controls characters
+    gsub("^[[:space:]]*","",x) ## Remove leading whitespaces
+    gsub("[[:space:]]*$","",x) ## Remove trailing whitespaces
+    gsub(' +',' ',x) ## Remove extra whitespaces
+    gsub("http[[:alnum:]]*",'', x) ## removes alphanumeric characters
+    gsub(pattern = "\\s*[[:alpha:]]*([[:alpha:]])\\1{2}[[:alpha:]]*", 
+             replacement = " ", x, ignore.case = TRUE)
+    gsub("^[0-9]|[0-9]$", "", x)   ## Remove numbers
+    gsub('[[:punct:]]', '', x) ## Remove punctuations
+}
+```
+
+```{r, warnings = FALSE}
+clean.combined.df <- as.data.frame(txt.cleaning(combined.df$text))
+colnames(clean.combined.df)[1] <- "text"
+```
+
+7. Remove profanity from the data frame:
+```{r}
+profanity <- readLines('badWords.txt', skipNul = T)
+```
+
+```{r, echo=T, results='hide'}
+clean.combined.df %>%
+  unnest_tokens(word, text)  %>%
+  filter(!word %in% profanity) 
+```
+
+5. Create corpora for the training and test data set:
+
+In this step the combined data set was split into training and test data sets
+using a 80/20 split. The data frames were then converted into the corpora. 
+
+```{r, warning=FALSE, message=FALSE}
+set.seed(1) #make this example reproducible
+clean.combined.df$id <- 1:nrow(combined.df) #create ID column
+
+train.df <- clean.combined.df %>% dplyr::sample_frac(0.80) #use 80% of dataset as training set 
+test.df  <- dplyr::anti_join(clean.combined.df, train.df, by = 'id') #and 20% as test set 
+
+train.corpus <- Corpus(VectorSource(train.df$text))
+test.corpus <- Corpus(VectorSource(test.df$text))
+```
+
+```{r, echo = FALSE}
+rm(list = ls()[!ls() %in% c("train.corpus", "test.corpus", "profanity")])
+```
+
+8. Save clean corpora:
+```{r} 
+writeLines(as.character(train.corpus), con= "clean.training.corpus.txt")
+writeLines(as.character(test.corpus), con= "clean.test.corpus.txt")
+```
+
+## Exploratory analysis of training dataset
+
+1. Summarize corpus:
+```{r}
+summary(train.corpus$content)
+```
+
+2. Count number of lines in corpus:
+```{r}
+length(train.corpus$content)
+```
+
+3. Count number of words in the corpus:
+```{r}
+wordcount(train.corpus$content)
+```
+
+## Text Mining
+
+1. Frequency by unigram
+```{r, echo=FALSE}
+unigrams_tokenizer <- function(text, remove.stopwords = FALSE) 
+{
+  custom.stopwords <- data.frame(word = stopwords('english'),
+                                   lexicon = "mylexicon")
+  tibble(text = text) %>%
+  mutate(text = replace_contraction(text)) %>% #remove contractions
+  mutate(word = gsub("'s","", text)) %>%
+  unnest_tokens(ngram, text, token = "ngrams", n = 1) %>% # unnest tokens by ngram
+  mutate(stem = wordStem(ngram)) %>%  # Stemming
+  filter(!grepl('[0-9]', ngram)) %>% # remove numbers
+
+        {if(remove.stopwords) # remove stop words
+            filter(.,!ngram %in% custom.stopwords$word) else .} %>%
+  count(ngram, sort = TRUE)
+}  
+```
+
+```{r}
+text_unigrams <- unigrams_tokenizer(train.corpus$content, remove.stopwords = T)
+head(text_unigrams)
+```
+
+#### Barplot 
+```{r,warning=FALSE,message=FALSE}
+library(ggplot2)
+text_unigrams %>% top_n(10) %>% ggplot(aes(ngram, n)) + geom_col() + xlab(NULL) + coord_flip()
+```
+
+#### Word cloud  
+```{r,warning=FALSE, message=FALSE}
+library(wordcloud)
+set.seed(1234)
+wordcloud(words = text_unigrams$ngram, freq = text_unigrams$n, min.freq = 5,
+          max.words=100, random.order=FALSE, rot.per=0.40, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+2. Frequency by pairs (bigrams)
+```{r, echo = FALSE}
+library(tidyr)
+
+bigrams_tokenizer <- function(text, remove.stopwords = TRUE) { 
+  
+  custom.stopwords <- data.frame(word = stopwords('english'),
+                                   lexicon = "mylexicon")
+  
+  tibble(text = text) %>%
+  mutate(word = gsub("'s","", text)) %>%
+  mutate(word = gsub("'t","", text)) %>%
+  mutate(text = replace_contraction(text)) %>%
+        unnest_tokens(ngram, text, token = "ngrams", n = 2) %>%
+  mutate(stem = wordStem(ngram)) %>%  # Stemming
+  filter(!grepl('[0-9]', ngram)) %>% # remove numbers
+  filter(!ngram %in% profanity) %>% # remove profanity
+  #drop_na() %>%
+  na.omit() %>%
+  separate(ngram, c("word1","word2")) %>%
+        {if(remove.stopwords)
+            filter(.,!word1 %in% custom.stopwords$word,
+                   !word2 %in% custom.stopwords$word) else .} %>%
+  count(word1, word2, sort = TRUE) %>%
+  unite(ngram, word1, word2, sep = " ")
+}
+```
+
+```{r, warning=FALSE, message=FALSE}
+text_bigrams <- bigrams_tokenizer(train.corpus$content, remove.stopwords = TRUE)
+head(text_bigrams)
+```
+
+#### Barplot  
+```{r,warning=FALSE,message=FALSE}
+library(ggplot2)
+text_bigrams %>% top_n(10) %>% ggplot(aes(ngram, n)) + geom_col() + xlab(NULL) + coord_flip()
+```
+
+#### Word cloud  
+```{r,warning=FALSE,message=FALSE}
+# Generate word cloud
+set.seed(1234)
+wordcloud(words = text_bigrams$ngram, freq = text_bigrams$n, min.freq = 2,
+          max.words=100, random.order=FALSE, rot.per=0.40, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+3. Frequency by triplets (trigrams)
+```{r, warning=FALSE, message=FALSE, echo = FALSE}
+trigrams_tokenizer <- function(text, remove.stopwords = FALSE) 
+{
+  custom.stopwords <- data.frame(word = stopwords('english'),
+                                   lexicon = "mylexicon")
+      
+  tibble(text = text) %>%
+  mutate(text = replace_contraction(text)) %>% #remove contractions
+  unnest_tokens(ngram, text, token = "ngrams", n = 3, drop = T, 
+                          to_lower = T) %>%
+  mutate(stem = wordStem(ngram)) %>%  # stemming
+  filter(!grepl('[0-9]', ngram)) %>% # remove numbers
+  filter(!ngram %in% profanity) %>% # remove profanity
+  drop_na() %>%
+  separate(ngram, c("word1","word2","word3")) %>%
+            {if(remove.stopwords)
+                filter(.,!word1 %in% custom.stopwords$word,
+                       !word2 %in% custom.stopwords$word,
+                       !word3 %in% custom.stopwords$word) else .} %>%
+  count(word1, word2, word3, sort = TRUE) %>%
+  unite(ngram, word1, word2, word3, sep = " ", na.rm = TRUE)
+}
+```
+
+```{r, warning=FALSE, message=FALSE}
+text_trigrams <- trigrams_tokenizer(train.corpus$content, remove.stopwords = T)
+text_trigrams <- na.omit(text_trigrams)
+head(text_trigrams)
+```
+
+#### Barplot 
+```{r,warning=FALSE,message=FALSE}
+library(ggplot2)
+text_trigrams %>% top_n(10) %>% ggplot(aes(ngram, n)) + geom_col() + xlab(NULL) + coord_flip()
+```
+
+#### Word cloud  
+```{r,warning=FALSE,message=FALSE}
+# Generate word cloud
+set.seed(1234)
+wordcloud(words = text_trigrams$ngram, freq = text_trigrams$n, min.freq = 2,
+          max.words=100, random.order=FALSE, rot.per=0.40, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+## Conclusion
+The exploratory analyses above, especially the n-gram models and frequencies, will help shape what algorithms I decide to move forward with. The frequency of n-grams helped to understand the frequencies of various combinations and how many are needed to predict most of the data. I may also create 3- and 4-gram models to assist in this process. Once I decide on an algorithm, I will develop an app with an easy-to-understand graphical user interface where the person typing can enter a string of text into a search box and receive a list of predicted words.
+
+<br/>
+
+### Appendix: All code for functions in this report
+
+```{r, eval=FALSE}
+
+create.text.df <- function(original, sample.percentage = 0.1, book = "default")
+{
+    set.seed(1)
+    if(!file.exists(original))
+    {
+        print("no file")
+        return(NULL)
+    } 
+    f <- file(original, "rb")
+    original.text <- readLines(f, encoding = "UTF-8", skipNul = TRUE)
+    close(f)
+    n.lines <- sort(sample(1:length(original.text),
+                           as.integer(length(original.text) * sample.percentage),
+                           replace = FALSE))
+    sampled.text <- original.text[n.lines]
+    return(data.frame(doc_id = 1:as.integer(length(original.text) * sample.percentage),
+                      book = book,
+                      text = sampled.text,
+                      stringsAsFactors = FALSE))
+}
+```
+
+```{r, eval=FALSE}
+
+txt.cleaning <- function(x)
+{
+    gsub("i'm", "i am", x)
+    gsub("i've", "i have", x)
+    gsub("don't", "do not", x)
+    gsub("did't", "did not", x)
+    gsub("doesn't", "does not", x)
+    gsub("haven't", "have not", x)
+    gsub("isn't", "is not", x)
+    gsub("won't", "will not", x)
+    gsub("can't", "can not", x)
+    gsub("n't", " not", x)
+    gsub("'ll", " will", x)
+    gsub("'re", " are", x)
+    gsub("'ve", " have", x)
+    gsub("'m", " am", x)
+    gsub("'d", " would", x)
+    gsub("'s", "", x)
+    gsub("'t",'', x)
+    gsub('http\\S+\\s*', '', x) ## Remove URLs
+    gsub('\\b+RT', '', x) ## Remove RT
+    gsub('#\\S+', '', x) ## Remove #
+    gsub('*\\S+', '', x) ## Remove *
+    gsub('@\\S+', '', x) ## Remove @
+    gsub('[[:cntrl:]]', '', x) ## Remove controls characters
+    gsub("^[[:space:]]*","",x) ## Remove leading whitespaces
+    gsub("[[:space:]]*$","",x) ## Remove trailing whitespaces
+    gsub(' +',' ',x) ## Remove extra whitespaces
+    gsub("http[[:alnum:]]*",'', x) ## removes alphanumeric characters
+    gsub(pattern = "\\s*[[:alpha:]]*([[:alpha:]])\\1{2}[[:alpha:]]*", 
+             replacement = " ", x, ignore.case = TRUE)
+    gsub("^[0-9]|[0-9]$", "", x)   ## Remove numbers
+    gsub('[[:punct:]]', '', x) ## Remove punctuations
+}
+```
+
+```{r, eval=FALSE}
+
+unigrams_tokenizer <- function(text, remove.stopwords = FALSE) 
+{
+  custom.stopwords <- data.frame(word = stopwords('english'),
+                                   lexicon = "mylexicon")
+  tibble(text = text) %>%
+  mutate(text = replace_contraction(text)) %>% #remove contractions
+  mutate(word = gsub("'s","", text)) %>%
+  unnest_tokens(ngram, text, token = "ngrams", n = 1) %>% # unnest tokens by ngram
+  mutate(stem = wordStem(ngram)) %>%  # Stemming
+  filter(!grepl('[0-9]', ngram)) %>% # remove numbers
+  filter(!ngram %in% profanity) %>% # remove profanity
+        {if(remove.stopwords) # remove stop words
+            filter(.,!ngram %in% custom.stopwords$word) else .} %>%
+  count(ngram, sort = TRUE)
+}
+```
+
+```{r, eval=FALSE}
+
+bigrams_tokenizer <- function(text, remove.stopwords = TRUE) { 
+  
+  custom.stopwords <- data.frame(word = stopwords('english'),
+                                   lexicon = "mylexicon")
+  
+  tibble(text = text) %>%
+  mutate(word = gsub("'s","", text)) %>%
+  mutate(word = gsub("'t","", text)) %>%
+  mutate(text = replace_contraction(text)) %>%
+        unnest_tokens(ngram, text, token = "ngrams", n = 2) %>%
+  mutate(stem = wordStem(ngram)) %>%  # Stemming
+  filter(!grepl('[0-9]', ngram)) %>% # remove numbers
+  filter(!ngram %in% profanity) %>% # remove profanity
+  #drop_na() %>%
+  na.omit() %>%
+  separate(ngram, c("word1","word2")) %>%
+        {if(remove.stopwords)
+            filter(.,!word1 %in% custom.stopwords$word,
+                   !word2 %in% custom.stopwords$word) else .} %>%
+  count(word1, word2, sort = TRUE) %>%
+  unite(ngram, word1, word2, sep = " ")
+}
+```
+
+
+```{r, eval=FALSE}
+
+trigrams_tokenizer <- function(text, remove.stopwords = FALSE) 
+{
+  custom.stopwords <- data.frame(word = stopwords('english'),
+                                   lexicon = "mylexicon")
+      
+  tibble(text = text) %>%
+  mutate(text = replace_contraction(text)) %>% #remove contractions
+  unnest_tokens(ngram, text, token = "ngrams", n = 3, drop = T, 
+                          to_lower = T) %>%
+  mutate(stem = wordStem(ngram)) %>%  # stemming
+  filter(!grepl('[0-9]', ngram)) %>% # remove numbers
+  filter(!ngram %in% profanity) %>% # remove profanity
+  drop_na() %>%
+  separate(ngram, c("word1","word2","word3")) %>%
+            {if(remove.stopwords)
+                filter(.,!word1 %in% custom.stopwords$word,
+                       !word2 %in% custom.stopwords$word,
+                       !word3 %in% custom.stopwords$word) else .} %>%
+  count(word1, word2, word3, sort = TRUE) %>%
+  unite(ngram, word1, word2, word3, sep = " ", na.rm = TRUE)
+}
+```
+

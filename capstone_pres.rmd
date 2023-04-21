@@ -1,0 +1,57 @@
+---
+title: "A SBO Predictive Model for Swiftkey Smartkeyboards"
+author: "FJ Haran"
+date: "`r Sys.Date()`"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, echo=FALSE}
+#suppressPackageStartupMessages(library(plotly))
+```
+
+## Introduction 
+- <font size="4"> Around the world, people spend an exorbitant amount of time on their mobile devices for email, social networking, banking, and a whole range of other activities; however, typing on mobile devices can be difficult. </font>
+
+- <font size="4"> SwiftKey, the corporate partner for this capstone course, builds smart 
+keyboards that make it easier for people to type on their mobile devices. One cornerstone of their smart keyboard is predictive text models, where the keyboard presents three options for the next word. This project's objective is to develop and build a predictive text model like those used by SwiftKey and incorporate it into a web app. </font> 
+
+- <font size="4"> The presented web app incorporates Katz's backoff model for text prediction. A backoff model is a generative n-gram language model that estimates the conditional probability of a word given its history in an n-gram. It accomplishes this estimation by backing off through progressively shorter history models under certain conditions (i.e., start with a trigram probability and then back off to a bigram or unigram probability based on data availability). </font>   
+
+## Back off model
+- <font size="4"> The specific backoff model^1^ chosen for this project was the 
+Stupid Backoff or SBO model. The SBO model does not generate normalized 
+probabilities but rather relative frequencies.</font>
+
+- <font size="4"> SBO is inexpensive, from a resource standpoint, method that can easily be performed in a distributed environment while approaching the quality of Kneser-Ney smoothing for large amounts of data. </font>
+
+- <font size="4"> The lack of normalization does not affect the functioning of the language model and depends on relative rather than absolute feature-function values. </font> 
+
+- <font size="4"> The predictive model we developed involved 75% of the provided 
+Swiftkey dataset and using an n-gram = 2. N-grams lengths 3 and 4 were tested but they did not improve predictive accuracy enough to justify the additional computation resources required to run these models. </font> 
+
+  <font size="2"> 1. Brants, T., Popat, A. C., Xu, P., Och, F. J., & Dean J. 
+(2007). "Large language models in machine translation." </font> 
+
+## Web app screenshot
+![https://fjh3.shinyapps.io/Capstone/](web_app_screenshot2.png)
+
+
+## Web app instructions 
+- <font size="5"> The left sidebar describes the problem and my solution. </font>
+
+- <font size="5"> The top right contains a text input box where a user will enter 
+1 to 4 words to be used in the prediction models to predict the next 1, 2, or 3 
+words. </font>
+
+      - Immediately underneath the text input box are two action buttons. 
+      - The first button START initiates the modelling process. 
+      - The second button REFRESH will refresh the web app and  clear the 
+        text put box and the predicted words. 
+
+- <font size="5"> The bottom right location lists the word predicted by the SBO 
+mode directly under "predicted word." 
+ </font>

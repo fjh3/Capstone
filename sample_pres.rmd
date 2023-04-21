@@ -1,0 +1,70 @@
+---
+title: "title: "Capsone Project: Predictive Text Web app""
+author: "FJ Haran"
+date: "`r Sys.Date()`"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, echo=FALSE}
+suppressPackageStartupMessages(library(plotly))
+suppressPackageStartupMessages(library(readr))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(psych))
+data(iris)
+```
+
+## Introduction 
+- Around the world, people are spending an increasing amount of time on their 
+mobile devices for email, social networking, banking and a whole range of other 
+activities. But typing on mobile devices can be a serious pain. 
+
+- SwiftKey, the corporate partner for the capstone course builds smart 
+keyboards that makes it easier for people to type on their mobile devices. One 
+cornerstone of their smart keyboard is predictive text models where the smart 
+keyboardpresents three options for what the next word might be. In the object 
+for this Capstone is to develop and build a predictive text models like those 
+used by SwiftKey and incorporate into a web app.
+
+- My web app incorporates Katz's backoff model for text prediction. This model 
+is generative n-gram language model that estimates the conditional probability 
+of a word given its history in a n-gram. It accomplishes this estimation by 
+backing off through progressively shorter history models under certain conditions
+(i.e, start with a trigram probability and then back off to a bigram or unigram 
+probability based on data availability).  
+
+## Back off model
+- The specific backoff model^1 chosen for this project was the Stupid Backoff 
+or SBO model. The SBO model does not generate normalized probabilities, but 
+rather relative frequencies.
+
+- SBO is a resource inexpensive method to calculate in a distributed environment
+while approaching the quality of Kneser-Ney smoothing for large amounts of data. 
+The lack of normalization does not affect the functioning of the language model in 
+the present setting and depends on relative rather than absolute feature-function
+values.
+
+1. Brants, T., Popat, A. C., Xu, P., Och, F. J., & Dean, J. (2007). Large language 
+models in machine translation.
+
+## Web app
+![Web app screen shot.](images/week3/silly-dog.png)
+
+- The left side bar describes the problem and our solution.
+- The top right contains a text input box is where a user will enter 1-4 words 
+to be used in the prediction models to predict the next 1, 2, or 3 words. 
+- Immediately underneath the text input box are two action buttons. 
+      - The first button **Start** initiates the modelling process.
+      - The second button **Refresh** will refresh the web app and clear the 
+        text put box and the predicted words.
+- The bottom right is where the predicted words will be listed directly under 
+the words "predicted words." The three predicted words will be listed with each 
+word being listed on separate line. 
+
+
+
+
